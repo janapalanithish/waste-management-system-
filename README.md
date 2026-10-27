@@ -181,6 +181,11 @@ The project is implemented as a working hardware prototype integrating:
 The prototype demonstrates the complete process from **waste measurement to recording and wireless monitoring**.
 
 ---
+## 🎥 Project Demonstration Video
+
+[▶ Watch the Prototype Demonstration Video](https://drive.google.com/file/d/183LwbrBgz0TicCVMK1CNNcnJVxgE4GBo/view?usp=share_link)
+
+---
 
 ## 📁 Project Structure
 
