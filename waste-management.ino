@@ -1,16 +1,16 @@
-First divide the code into two different parts.
 #include <WiFi.h>
 #include <WebServer.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <LittleFS.h>
 #include "HX711.h"
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
-// Hotspot Credentials (Mee hotspot name & password ivvandi)
+// Hotspot Credentials
 const char* ssid = "food-waste";
 const char* password = "12345678";
 
@@ -28,14 +28,14 @@ const int BTN_SAVE_DAY = 32;
 const int BTN_NEXT_DAY = 33;
 
 HX711 scale;
-float calibration_factor = 370.0; // Mee calibrated factor
+float calibration_factor = 370.0;
 const float ZERO_THRESHOLD = 5.0;
 const float DETECTION_TRIGGER = 10.0;
 
 // Application Variables
-float totalFoodPrepared = 1000.0; // Default 1000g
+float totalFoodPrepared = 1000.0;
 float dailyWaste[7] = {0, 0, 0, 0, 0, 0, 0};
-int currentDay = 0; // 0 = Day 1, 6 = Day 7
+int currentDay = 0;
 
 enum SystemState { WAITING_FOR_WASTE, COUNTDOWN, SHOW_FINAL_WEIGHT };
 SystemState currentState = WAITING_FOR_WASTE;
@@ -72,8 +72,19 @@ void moveToNextDay() {
   scale.tare(10);
 }
 
-// Webpage UI
-String getHTML() {
+// Serve HTML File from LittleFS
+void handleRoot() {
+  File file = LittleFS.open("/index.html", "r");
+  if (!file) {
+    server.send(404, "text/plain", "index.html not found. Upload LittleFS data!");
+    return;
+  }
+  server.streamFile(file, "text/html");
+  file.close();
+}
+
+// JSON Data Endpoint for Frontend AJAX Calls
+void handleData() {
   float totalWeekWaste = 0.0;
   for (int i = 0; i < 7; i++) {
     totalWeekWaste += dailyWaste[i];
@@ -81,69 +92,39 @@ String getHTML() {
   float currentPercent = (totalFoodPrepared > 0) ? ((dailyWaste[currentDay] + finalWeight) / totalFoodPrepared) * 100.0 : 0.0;
   float weekPercent = (totalFoodPrepared > 0) ? (totalWeekWaste / (totalFoodPrepared * 7.0)) * 100.0 : 0.0;
 
-  String html = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>";
-  html += "<title>Food Waste Tracker</title>";
-  html += "<style>";
-  html += "body{font-family:Segoe UI,sans-serif;background:#0f172a;color:#f8fafc;padding:15px;text-align:center;margin:0;}";
-  html += ".card{background:#1e293b;border-radius:12px;padding:16px;margin:12px auto;max-width:480px;}";
-  html += "input[type=number]{width:80%;padding:10px;margin:8px 0;border-radius:6px;border:none;font-size:16px;}";
-  html += "button{background:#38bdf8;color:#0f172a;font-weight:bold;padding:10px 18px;border:none;border-radius:6px;cursor:pointer;margin:5px;font-size:15px;}";
-  html += ".btn-save{background:#22c55e;color:#000;}.btn-next{background:#f59e0b;color:#000;}";
-  html += "table{width:100%;border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #334155;padding:8px;}th{background:#334155;}";
-  html += ".badge{padding:8px 14px;border-radius:6px;font-weight:bold;display:inline-block;margin-top:8px;}";
-  html += ".green{background:#22c55e;color:#000;}.yellow{background:#eab308;color:#000;}.red{background:#ef4444;color:#fff;}";
-  html += "</style></head><body>";
-
-  html += "<h2>Smart Food Waste Tracker</h2>";
-
-  html += "<div class='card'>";
-  html += "<h3>Day Operations (Day " + String(currentDay + 1) + ")</h3>";
-  html += "<a href='/webSave'><button class='btn-save'>Save Weight</button></a>";
-  html += "<a href='/webNext'><button class='btn-next'>Next Day</button></a>";
-  html += "</div>";
-
-  html += "<div class='card'>";
-  html += "<h3>Set Total Food Prepared</h3>";
-  html += "<form action='/setFood' method='POST'>";
-  html += "<input type='number' step='0.1' name='totalFood' placeholder='Total Food in Grams' value='" + String(totalFoodPrepared) + "' required><br>";
-  html += "<button type='submit'>Update Total Food</button>";
-  html += "</form>";
-  html += "</div>";
-
-  html += "<div class='card'>";
-  html += "<h3>Day " + String(currentDay + 1) + " Live Status</h3>";
-  html += "<p>Live Weight: <b>" + String(finalWeight, 1) + " g</b></p>";
-  html += "<p>Saved Waste Today: <b>" + String(dailyWaste[currentDay], 1) + " g</b></p>";
-  html += "<p>Waste Percentage: <b>" + String(currentPercent, 1) + "%</b></p>";
-
+  String statusText = "";
+  String statusClass = "";
   if (currentPercent <= 30.0) {
-    html += "<span class='badge green'>STATUS: SAFE (&le; 30%)</span>";
+    statusText = "STATUS: SAFE (<= 30%)";
+    statusClass = "green";
   } else if (currentPercent > 40.0 && currentPercent <= 70.0) {
-    html += "<span class='badge yellow'>WARNING: MODERATE (> 40%)</span>";
-  } else if (currentPercent > 70.0) {
-    html += "<span class='badge red'>ALERT: HIGH FOOD WASTE (> 70%)</span>";
+    statusText = "WARNING: MODERATE (> 40%)";
+    statusClass = "yellow";
+  } else {
+    statusText = "ALERT: HIGH FOOD WASTE (> 70%)";
+    statusClass = "red";
   }
-  html += "</div>";
 
-  html += "<div class='card'>";
-  html += "<h3>Weekly Overview</h3>";
-  html += "<table><tr><th>Day</th><th>Total Waste</th></tr>";
+  String json = "{";
+  json += "\"currentDay\":" + String(currentDay + 1) + ",";
+  json += "\"totalFoodPrepared\":" + String(totalFoodPrepared, 1) + ",";
+  json += "\"finalWeight\":" + String(finalWeight, 1) + ",";
+  json += "\"todayWaste\":" + String(dailyWaste[currentDay], 1) + ",";
+  json += "\"currentPercent\":" + String(currentPercent, 1) + ",";
+  json += "\"statusText\":\"" + statusText + "\",";
+  json += "\"statusClass\":\"" + statusClass + "\",";
+  json += "\"totalWeekWaste\":" + String(totalWeekWaste, 1) + ",";
+  json += "\"weekPercent\":" + String(weekPercent, 1) + ",";
+  json += "\"dailyWaste\":[";
   for (int i = 0; i < 7; i++) {
-    html += "<tr><td>Day " + String(i + 1) + (i == currentDay ? " (Active)" : "") + "</td>";
-    html += "<td>" + String(dailyWaste[i], 1) + " g</td></tr>";
+    json += String(dailyWaste[i], 1);
+    if (i < 6) json += ",";
   }
-  html += "</table>";
-  html += "<hr style='border:0;border-top:1px solid #334155;margin:15px 0;'>";
-  html += "<p>Total 7 Days Waste: <b>" + String(totalWeekWaste, 1) + " g</b></p>";
-  html += "<p>Weekly Average Waste: <b>" + String(weekPercent, 1) + "%</b></p>";
-  html += "</div>";
+  json += "]";
+  json += "}";
 
-  html += "<script>setTimeout(()=>{location.reload();}, 4000);</script>";
-  html += "</body></html>";
-  return html;
+  server.send(200, "application/json", json);
 }
-
-void handleRoot() { server.send(200, "text/html", getHTML()); }
 
 void handleSetFood() {
   if (server.hasArg("totalFood")) {
@@ -175,17 +156,19 @@ void setup() {
   pinMode(BTN_SAVE_DAY, INPUT_PULLUP);
   pinMode(BTN_NEXT_DAY, INPUT_PULLUP);
 
+  if (!LittleFS.begin(true)) {
+    Serial.println("An Error has occurred while mounting LittleFS");
+  }
+
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
     Serial.println("OLED Failed");
   }
 
-  // 1. Initial Load Cell Tare First (Guarantees zero start)
   scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
   scale.set_scale(calibration_factor);
   delay(500);
   scale.tare(15);
 
-  // 2. Wi-Fi Connection Attempt (Non-blocking: Max 8 seconds)
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
   display.setTextSize(1);
@@ -207,6 +190,7 @@ void setup() {
     Serial.print("\nConnected! IP: ");
     Serial.println(WiFi.localIP());
     server.on("/", handleRoot);
+    server.on("/data", handleData);
     server.on("/setFood", HTTP_POST, handleSetFood);
     server.on("/webSave", handleWebSave);
     server.on("/webNext", handleWebNext);
@@ -223,7 +207,6 @@ void loop() {
     server.handleClient();
   }
 
-  // Fast check so weight is never blocked
   if (!scale.is_ready()) return;
 
   float currentWeight = scale.get_units(2);
@@ -231,7 +214,6 @@ void loop() {
     currentWeight = 0.0;
   }
 
-  // Hardware Switch 1: Save Weight
   if (digitalRead(BTN_SAVE_DAY) == LOW) {
     delay(200);
     saveCurrentWeight();
@@ -243,7 +225,6 @@ void loop() {
     delay(1000);
   }
 
-  // Hardware Switch 2: Next Day
   if (digitalRead(BTN_NEXT_DAY) == LOW) {
     delay(200);
     moveToNextDay();
@@ -262,7 +243,6 @@ void loop() {
   float activePercentage = (totalFoodPrepared > 0) ? ((dailyWaste[currentDay] + finalWeight) / totalFoodPrepared) * 100.0 : 0.0;
   updateLEDs(activePercentage);
 
-  // Scale State Machine
   switch (currentState) {
     case WAITING_FOR_WASTE: {
       display.clearDisplay();
@@ -289,7 +269,6 @@ void loop() {
       }
       display.display();
 
-      // Trigger Countdown when weight > 10g
       if (currentWeight >= DETECTION_TRIGGER) {
         countdownStartTime = millis();
         currentState = COUNTDOWN;
@@ -316,7 +295,6 @@ void loop() {
         display.print(remainingSec);
         display.display();
       } else {
-        // Fast 5 samples to lock reading without freezing loop
         finalWeight = scale.get_units(5);
         if (finalWeight < ZERO_THRESHOLD) finalWeight = 0.0;
         currentState = SHOW_FINAL_WEIGHT;
@@ -352,7 +330,6 @@ void loop() {
       display.print("Btn1:Save | Remove:0");
       display.display();
 
-      // Plate theeyagane auto zero
       if (currentWeight < ZERO_THRESHOLD) {
         delay(400);
         scale.tare(5);

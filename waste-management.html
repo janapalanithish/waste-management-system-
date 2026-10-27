@@ -1,277 +1,94 @@
 <!DOCTYPE html>
-
 <html>
-
 <head>
-
-<meta name="viewport"
-      content="width=device-width, initial-scale=1">
-
-<title>Food Waste Tracker</title>
-
-<style>
-
-body {
-  font-family: Segoe UI, sans-serif;
-  background: #0f172a;
-  color: #f8fafc;
-  padding: 15px;
-  text-align: center;
-  margin: 0;
-}
-
-.card {
-  background: #1e293b;
-  border-radius: 12px;
-  padding: 16px;
-  margin: 12px auto;
-  max-width: 480px;
-}
-
-input[type=number] {
-  width: 80%;
-  padding: 10px;
-  margin: 8px 0;
-  border-radius: 6px;
-  border: none;
-  font-size: 16px;
-}
-
-button {
-  background: #38bdf8;
-  color: #0f172a;
-  font-weight: bold;
-  padding: 10px 18px;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  margin: 5px;
-  font-size: 15px;
-}
-
-.btn-save {
-  background: #22c55e;
-  color: #000;
-}
-
-.btn-next {
-  background: #f59e0b;
-  color: #000;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 12px;
-}
-
-th,
-td {
-  border: 1px solid #334155;
-  padding: 8px;
-}
-
-th {
-  background: #334155;
-}
-
-.badge {
-  padding: 8px 14px;
-  border-radius: 6px;
-  font-weight: bold;
-  display: inline-block;
-  margin-top: 8px;
-}
-
-.green {
-  background: #22c55e;
-  color: #000;
-}
-
-.yellow {
-  background: #eab308;
-  color: #000;
-}
-
-.red {
-  background: #ef4444;
-  color: #fff;
-}
-
-</style>
-
+  <meta name='viewport' content='width=device-width, initial-scale=1'>
+  <title>Food Waste Tracker</title>
+  <style>
+    body { font-family: Segoe UI, sans-serif; background: #0f172a; color: #f8fafc; padding: 15px; text-align: center; margin: 0; }
+    .card { background: #1e293b; border-radius: 12px; padding: 16px; margin: 12px auto; max-width: 480px; }
+    input[type=number] { width: 80%; padding: 10px; margin: 8px 0; border-radius: 6px; border: none; font-size: 16px; }
+    button { background: #38bdf8; color: #0f172a; font-weight: bold; padding: 10px 18px; border: none; border-radius: 6px; cursor: pointer; margin: 5px; font-size: 15px; }
+    .btn-save { background: #22c55e; color: #000; }
+    .btn-next { background: #f59e0b; color: #000; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { border: 1px solid #334155; padding: 8px; }
+    th { background: #334155; }
+    .badge { padding: 8px 14px; border-radius: 6px; font-weight: bold; display: inline-block; margin-top: 8px; }
+    .green { background: #22c55e; color: #000; }
+    .yellow { background: #eab308; color: #000; }
+    .red { background: #ef4444; color: #fff; }
+  </style>
 </head>
-
 <body>
 
-<h2>Smart Food Waste Tracker</h2>
+  <h2>Smart Food Waste Tracker</h2>
 
-<div class="card">
+  <div class='card'>
+    <h3>Day Operations (<span id='day-label'>Day 1</span>)</h3>
+    <a href='/webSave'><button class='btn-save'>Save Weight</button></a>
+    <a href='/webNext'><button class='btn-next'>Next Day</button></a>
+  </div>
 
-<h3>Day Operations</h3>
+  <div class='card'>
+    <h3>Set Total Food Prepared</h3>
+    <form action='/setFood' method='POST'>
+      <input type='number' step='0.1' name='totalFood' id='totalFoodInput' placeholder='Total Food in Grams' required><br>
+      <button type='submit'>Update Total Food</button>
+    </form>
+  </div>
 
-<a href="/webSave">
-<button class="btn-save">
-Save Weight
-</button>
-</a>
+  <div class='card'>
+    <h3><span id='live-day-label'>Day 1</span> Live Status</h3>
+    <p>Live Weight: <b id='live-weight'>0.0 g</b></p>
+    <p>Saved Waste Today: <b id='today-waste'>0.0 g</b></p>
+    <p>Waste Percentage: <b id='waste-percent'>0.0%</b></p>
+    <div id='status-badge' class='badge green'>STATUS: SAFE (&le; 30%)</div>
+  </div>
 
-<a href="/webNext">
-<button class="btn-next">
-Next Day
-</button>
-</a>
+  <div class='card'>
+    <h3>Weekly Overview</h3>
+    <table>
+      <thead>
+        <tr><th>Day</th><th>Total Waste</th></tr>
+      </thead>
+      <tbody id='weekly-table-body'>
+        <!-- Populated via JavaScript -->
+      </tbody>
+    </table>
+    <hr style='border:0;border-top:1px solid #334155;margin:15px 0;'>
+    <p>Total 7 Days Waste: <b id='total-week-waste'>0.0 g</b></p>
+    <p>Weekly Average Waste: <b id='week-percent'>0.0%</b></p>
+  </div>
 
-</div>
+  <script>
+    function fetchData() {
+      fetch('/data')
+        .then(response => response.json())
+        .then(data => {
+          document.getElementById('day-label').innerText = 'Day ' + data.currentDay;
+          document.getElementById('live-day-label').innerText = 'Day ' + data.currentDay;
+          document.getElementById('totalFoodInput').value = data.totalFoodPrepared;
+          document.getElementById('live-weight').innerText = data.finalWeight.toFixed(1) + ' g';
+          document.getElementById('today-waste').innerText = data.todayWaste.toFixed(1) + ' g';
+          document.getElementById('waste-percent').innerText = data.currentPercent.toFixed(1) + '%';
+          
+          const badge = document.getElementById('status-badge');
+          badge.className = 'badge ' + data.statusClass;
+          badge.innerText = data.statusText;
 
+          let rows = '';
+          for (let i = 0; i < 7; i++) {
+            let active = (i + 1 === data.currentDay) ? ' (Active)' : '';
+            rows += `<tr><td>Day ${i + 1}${active}</td><td>${data.dailyWaste[i].toFixed(1)} g</td></tr>`;
+          }
+          document.getElementById('weekly-table-body').innerHTML = rows;
 
-<div class="card">
-
-<h3>Set Total Food Prepared</h3>
-
-<form action="/setFood"
-      method="POST">
-
-<input
-  type="number"
-  step="0.1"
-  name="totalFood"
-  placeholder="Total Food in Grams"
-  required>
-
-<br>
-
-<button type="submit">
-Update Total Food
-</button>
-
-</form>
-
-</div>
-
-
-<div class="card">
-
-<h3>Live Status</h3>
-
-<p>
-Live Weight:
-<b id="liveWeight">
-0.0 g
-</b>
-</p>
-
-<p>
-Saved Waste Today:
-<b id="savedWaste">
-0.0 g
-</b>
-</p>
-
-<p>
-Waste Percentage:
-<b id="wastePercentage">
-0.0%
-</b>
-</p>
-
-<span
-  id="status"
-  class="badge green">
-
-STATUS: SAFE
-
-</span>
-
-</div>
-
-
-<div class="card">
-
-<h3>Weekly Overview</h3>
-
-<table>
-
-<tr>
-
-<th>
-Day
-</th>
-
-<th>
-Total Waste
-</th>
-
-</tr>
-
-<tr>
-<td>Day 1</td>
-<td>0.0 g</td>
-</tr>
-
-<tr>
-<td>Day 2</td>
-<td>0.0 g</td>
-</tr>
-
-<tr>
-<td>Day 3</td>
-<td>0.0 g</td>
-</tr>
-
-<tr>
-<td>Day 4</td>
-<td>0.0 g</td>
-</tr>
-
-<tr>
-<td>Day 5</td>
-<td>0.0 g</td>
-</tr>
-
-<tr>
-<td>Day 6</td>
-<td>0.0 g</td>
-</tr>
-
-<tr>
-<td>Day 7</td>
-<td>0.0 g</td>
-</tr>
-
-</table>
-
-<hr
-style="
-border:0;
-border-top:1px solid #334155;
-margin:15px 0;
-">
-
-<p>
-Total 7 Days Waste:
-<b>0.0 g</b>
-</p>
-
-<p>
-Weekly Average Waste:
-<b>0.0%</b>
-</p>
-
-</div>
-
-
-<script>
-
-setTimeout(function() {
-
-  location.reload();
-
-}, 4000);
-
-</script>
-
-
+          document.getElementById('total-week-waste').innerText = data.totalWeekWaste.toFixed(1) + ' g';
+          document.getElementById('week-percent').innerText = data.weekPercent.toFixed(1) + '%';
+        });
+    }
+    setInterval(fetchData, 4000);
+    window.onload = fetchData;
+  </script>
 </body>
-
 </html>
